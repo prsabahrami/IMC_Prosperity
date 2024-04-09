@@ -9,4 +9,8 @@ import matplotlib.pyplot as plt
 # plt.plot(df[filter]['timestamp'], df[filter]['mid_price'])
 # plt.show()
 
-print(sorted({2:3, 1:5}.items()))
+
+df = pd.read_csv('data.csv', sep=';')
+
+with open('data.txt', 'w') as f:
+    f.write(str(df[["product", "timestamp", "mid_price"]].to_dict()))
