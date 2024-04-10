@@ -9,9 +9,9 @@ using namespace std;
 // F(i, j) = N * ((1000 - i) * (i - 900 - 1) / 100 + (1000 - j) * (j - i) / 100)
 
 
-constexpr long long int N = 10000000;
+constexpr long long int N = 1000000000;
 
-double m = 6.12;
+double m = 0.12;
 double total_probability = 1.0 * m * 5050;
 
 double F(int i, int j) {
