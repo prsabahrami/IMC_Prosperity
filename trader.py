@@ -148,52 +148,43 @@ logger = Logger()
 
 class Trader:
 
-    star_cache = []  # limit of 4
+    star_cache_bid = []  # limit of 4
+    star_cache_ask = []  # limit of 4
     star_limit = 4
     position = {"AMETHYSTS": 0, "STARFRUIT": 0}
     position_limits = {"AMETHYSTS": 20, "STARFRUIT": 20}
     t = 0
 
-    def get_mid(self, order_depth: OrderDepth):
-        if len(order_depth.buy_orders) == 0 or len(order_depth.sell_orders) == 0:
-            return 0
-        best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-        best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-        logger.print("Best bid: " + str(best_bid) + ", Best ask: " + str(best_ask))
-        return (best_bid * best_bid_amount + best_ask * best_ask_amount * -1) / (
-            best_ask_amount * -1 + best_bid_amount
-        )
-
+    def get_mid_bid(self, order_depth: OrderDepth):
+        sum = 0
+        count = 0
+        for bid, amount in order_depth.buy_orders.items():
+            sum += bid * amount
+            count += amount
+        return sum / count
+    def get_mid_ask(self, order_depth: OrderDepth):
+        sum = 0
+        count = 0
+        for ask, amount in order_depth.sell_orders.items():
+            sum += ask * amount * -1
+            count += amount * -1
+        return sum / count
+    
+    
     def calc_next(self):
-        polycoefs = [
-            5.028882e03,
-            4.178146e-02,
-            -2.865743e-05,
-            8.487999e-09,
-            -1.061188e-12,
-            3.142759e-17,
-            4.035450e-21,
-            -2.590489e-25,
-        ]
-        coefs = [0.3460803, 0.2626995, 0.1956541, 0.1921341]
-        if len(self.star_cache) < self.star_limit:
+        coef_bid = [0.68898749, 0.22587252, 0.06184055, 0.02223278]
+        coef_ask = [0.64999519, 0.23712433, 0.06647112, 0.04528404]
+        if len(self.star_cache_bid) < self.star_limit:
             return [100000, -100000]
-        output = 17.3638393
-        out2 = 0
-        for i in range(len(coefs)):
-            output += coefs[i] * self.star_cache[i]
-        for i in range(7):
-            out2 += polycoefs[i] * (self.t**i)
-        # output += out2
-        # output /= 2
-        logger.print("timestamp: ", self.t)
-        return [
-            output + 4,
-            output
-            - 1
-            - 4 * bool(self.t >= 570 and self.t <= 640)
-            - 3 * bool(self.t >= 870 and self.t <= 960),
-        ]
+        output_bid = 5.39362451
+        output_ask = 5.69797192
+        
+        for i in range(len(coef_bid)):
+            output_bid += coef_bid[i] * self.star_cache_bid[i]
+        for i in range(len(coef_ask)):
+            output_ask += coef_ask[i] * self.star_cache_ask[i]
+            
+        return [output_ask - 3 , output_bid + 3 - 2 * bool(self.t > 370 and self.t < 560)]
 
     def run(self, state: TradingState):
         self.t = state.timestamp / 100
@@ -204,77 +195,129 @@ class Trader:
         for product in state.order_depths:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
-
             if product != "STARFRUIT":
-                acceptable_price = [10000, 10000]
+                # acceptable_price = [10000, 10000]
+                ps = 15
+                pos = state.position.get(product, 0)
+                osell = order_depth.sell_orders
+                obuy = order_depth.buy_orders
+                
+                if len(osell) > 0:
+                    best_ask = min(osell.keys())
+                    if best_ask <= 9999:
+                        best_ask_amount = osell[best_ask]
+                    else:
+                        best_ask_amount = 0
+                else:
+                    best_ask_amount = 0
+
+                if len(obuy) > 0:
+                    best_bid = max(obuy.keys())
+                    if best_bid >= 10001:
+                        best_bid_amount = obuy[best_bid]
+                    else:
+                        best_bid_amount = 0 
+                else:
+                    best_bid_amount = 0
+
+                if pos - best_ask_amount > self.position_limits[product]:
+                    best_ask_amount = pos - self.position_limits[product]
+                    open_ask_amount = 0
+                else:
+                    open_ask_amount = pos - ps - best_ask_amount
+                    
+                if pos - best_bid_amount < -self.position_limits[product]:
+                    best_bid_amount = pos + self.position_limits[product]
+                    open_bid_amount = 0
+                else:
+                    open_bid_amount = pos + ps - best_bid_amount
+
+                open_ask_amount = min(0, open_ask_amount)
+                open_bid_amount = max(0, open_bid_amount)
+
+                logger.print("best_ask_amount", best_ask_amount)
+                if best_ask_amount < 0:
+                    logger.print("BUY", product, str(-best_ask_amount) + "x", best_ask)
+                    orders.append(Order(product, best_ask, -best_ask_amount))
+
+                logger.print("open_ask_amount", open_ask_amount)
+                if open_ask_amount < 0:
+                    logger.print("BUY", product, str(-open_ask_amount) + "x", 10003)
+                    orders.append(Order(product, 9997, -open_ask_amount))
+
+                logger.print("best_bid_amount", best_bid_amount)
+                if best_bid_amount > 0:
+                    logger.print("SELL", product, str(best_bid_amount) + "x", best_bid)
+                    orders.append(Order(product, best_bid, -best_bid_amount))
+
+                logger.print("open_bid_amount", open_bid_amount)
+                if open_bid_amount > 0:
+                    logger.print("SELL", product, str(open_bid_amount) + "x", 10003)
+                    orders.append(Order(product, 10003, -open_bid_amount))
+
             else:
                 nxt = self.calc_next()
                 acceptable_price = nxt
 
-                self.star_cache.append(self.get_mid(order_depth))
-                logger.print("Star cache: " + str(self.star_cache))
+                self.star_cache_bid.append(self.get_mid_bid(order_depth))
+                self.star_cache_ask.append(self.get_mid_ask(order_depth))
 
-                if len(self.star_cache) > self.star_limit:
-                    self.star_cache.pop(0)
-            logger.print("Acceptable price : " + str(acceptable_price))
-            logger.print(
-                "Buy Order depth : "
-                + str(len(order_depth.buy_orders))
-                + ", Sell order depth : "
-                + str(len(order_depth.sell_orders))
-            )
+                logger.print("Star cache bid : " + str(self.star_cache_bid))
+                logger.print("Star cache ask : " + str(self.star_cache_ask))
 
-            pos = self.position[product]
+                if len(self.star_cache_bid) > self.star_limit:
+                    self.star_cache_bid.pop(0)
+                if len(self.star_cache_ask) > self.star_limit:
+                    self.star_cache_ask.pop(0)
+                logger.print("Acceptable price : " + str(acceptable_price))
+                logger.print(
+                    "Buy Order depth : "
+                    + str(len(order_depth.buy_orders))
+                    + ", Sell order depth : "
+                    + str(len(order_depth.sell_orders))
+                )
 
-            osell = sorted(order_depth.sell_orders.items())
-            for price, mnt in osell:
-                logger.print("current position: " + str(self.position[product]))
-                if (
-                    price <= acceptable_price[1]
-                    or (
-                        (self.position[product] < 0)
-                        and (price == acceptable_price[1] + 1)
-                    )
-                ) and pos < self.position_limits[product]:
-                    buy_amount = min(-mnt, self.position_limits[product] - pos)
-                    pos += buy_amount
-                    logger.print("BUY", str(buy_amount) + "x", price)
-                    orders.append(Order(product, price, buy_amount))
+                pos = self.position[product]
 
-            # buy_margin = list(order_depth.sell_orders.items())[0][0] + 1
-            # sell_margin = list(order_depth.buy_orders.items())[0][0] - 1
+                osell = sorted(order_depth.sell_orders.items())
+                for price, mnt in osell:
+                    logger.print("current position: " + str(self.position[product]))
+                    logger.print("BUY", "Price: " + str(price), "Position: " + str(pos))
+                    if price <= acceptable_price[1] and pos < self.position_limits[product]:
+                        buy_amount = min(-mnt, self.position_limits[product] - pos)
+                        pos += buy_amount
+                        logger.print("BUY", str(buy_amount) + "x", price)
+                        orders.append(Order(product, price, buy_amount))
 
-            # bid = int(min(buy_margin, acceptable_price[1]))
-            # ask = int(max(sell_margin, acceptable_price[0]))
+                # buy_margin = list(order_depth.sell_orders.items())[0][0] + 1
+                # sell_margin = list(order_depth.buy_orders.items())[0][0] - 1
 
-            # if pos < self.position_limits[product]:
-            #     buy_amount = self.position_limits[product] - pos
-            #     orders.append(Order(product, bid, buy_amount))
-            #     print("BUY", str(buy_amount) + "x", bid)
-            #     pos += buy_amount
+                # bid = int(min(buy_margin, acceptable_price[1]))
+                # ask = int(max(sell_margin, acceptable_price[0]))
 
-            pos = self.position[product]
+                # if pos < self.position_limits[product]:
+                #     buy_amount = self.position_limits[product] - pos
+                #     orders.append(Order(product, bid, buy_amount))
+                #     print("BUY", str(buy_amount) + "x", bid)
+                #     pos += buy_amount
 
-            obuy = sorted(order_depth.buy_orders.items(), reverse=True)
-            for price, mnt in obuy:
-                logger.print("current position: " + str(self.position[product]))
-                if (
-                    price >= acceptable_price[0]
-                    or (
-                        (self.position[product] > 0)
-                        and (price == acceptable_price[0] - 1)
-                    )
-                ) and pos > -self.position_limits[product]:
-                    sell_amount = max(-mnt, -pos - self.position_limits[product])
-                    pos += sell_amount
-                    logger.print("SELL", str(sell_amount) + "x", price)
-                    orders.append(Order(product, price, sell_amount))
+                pos = self.position[product]
 
-            # if pos > -self.position_limits[product]:
-            #     sell_amount = -pos - self.position_limits[product]
-            #     orders.append(Order(product, ask, sell_amount))
-            #     pos += sell_amount
-            #     print("SELL", str(sell_amount) + "x", ask)
+                obuy = sorted(order_depth.buy_orders.items(), reverse=True)
+                for price, mnt in obuy:
+                    logger.print("current position: " + str(self.position[product]))
+                    logger.print("SELL", "Price: " + str(price), "Position: " + str(pos))
+                    if  price >= acceptable_price[0] and pos > -self.position_limits[product]:
+                        sell_amount = max(-mnt, -pos - self.position_limits[product])
+                        pos += sell_amount
+                        logger.print("SELL", str(sell_amount) + "x", price)
+                        orders.append(Order(product, price, sell_amount))
+
+                # if pos > -self.position_limits[product]:
+                #     sell_amount = -pos - self.position_limits[product]
+                #     orders.append(Order(product, ask, sell_amount))
+                #     pos += sell_amount
+                #     print("SELL", str(sell_amount) + "x", ask)
 
             result[product] = orders
 
@@ -308,7 +351,8 @@ class Trader:
 #     ),
 # }
 
-# print(Trader.get_mid(trader, order_depths["AMETHYSTS"]))
+# print(Trader.get_mid_bid(trader, order_depths["AMETHYSTS"]))
+# print(Trader.get_mid_ask(trader, order_depths["AMETHYSTS"]))
 
 # own_trades = {
 #     "AMETHYSTS": [
