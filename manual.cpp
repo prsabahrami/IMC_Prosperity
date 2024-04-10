@@ -9,11 +9,20 @@ using namespace std;
 // F(i, j) = N * ((1000 - i) * (i - 900 - 1) / 100 + (1000 - j) * (j - i) / 100)
 
 
-constexpr int N = 10;
+constexpr long long int N = 10000000;
+
+double m = 0.2;
+long long int total_probability = m * 5050;
 
 double F(int i, int j) {
     if (i >= j) return 0;
-    return 1.0 * N * ((1000 - i) * (i - 900 - 1) / 100 + (1000 - j) * (j - i) / 100);
+    i -= 900; j -= 900;
+    long long int sum_i = 1ll * i * (i - 1) / 2;
+    long long int sum_j = 1ll * j * (j - 1) / 2;
+    double prob_i = 1.0 * sum_i / total_probability;
+    double prob_j = 1.0 * (sum_j - sum_i + i - j)  / total_probability;
+    i += 900; j += 900;
+    return 1.0 * N * ((1000 - i) * prob_i + (1000 - j) * prob_j);
 }
 
 int main() {
