@@ -5,16 +5,10 @@ import numpy as np
 
 class Trader:
 
-    A = np.array([[1, 1], [0, 1]])
-    B = np.array([[0.5], [1]])
-    C = np.array([[1, 0]])
-    Q = np.array([[0.0001, 0], [0, 0.0001]])
-    R = np.array([[0.01]])
-    x0 = np.array([[5.03954329e03], [-2.32747656e-01]])
-    P0 = np.eye(2)
-    x = x0
-    P = P0
-    filtered_prices: List = []
+    star_cache = []  # limit of 4
+    star_limit = 4
+    position = {"AMETHYSTS": 0, "STARFRUIT": 0}
+    position_limits = {"AMETHYSTS": 20, "STARFRUIT": 20}
 
     def get_mid(self, order_depth: OrderDepth):
         if len(order_depth.buy_orders) == 0 or len(order_depth.sell_orders) == 0:
@@ -25,6 +19,15 @@ class Trader:
         return (best_bid * best_bid_amount + best_ask * best_ask_amount * -1) / (
             best_ask_amount * -1 + best_bid_amount
         )
+
+    def calc_next(self):
+        coefs = [0.3417687, 0.2610691, 0.2077068, 0.1889884]
+        if len(self.star_cache) < self.star_limit:
+            return [float("inf"), -float("inf")]
+        output = 2.3564944
+        for i in range(len(coefs)):
+            output += coefs[i] * self.star_cache[i]
+        return [output + 1, output - 1]
 
     def run(self, state: TradingState):
         print("traderData: " + state.traderData)
@@ -37,21 +40,16 @@ class Trader:
             orders: List[Order] = []
 
             if product != "STARFRUIT":
-                acceptable_price = 10000
+                acceptable_price = [10000, 10000]
             else:
-                z = self.get_mid(order_depth)
-                x_pred = np.dot(self.A, self.x)
-                P_pred = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
+                nxt = self.calc_next()
+                acceptable_price = nxt
 
-                # Update
-                y = z - np.dot(self.C, x_pred)
-                S = np.dot(np.dot(self.C, P_pred), self.C.T) + self.R
-                K = np.dot(np.dot(P_pred, self.C.T), np.linalg.inv(S))
-                self.x = x_pred + np.dot(K, y)
-                self.P = P_pred - np.dot(np.dot(K, self.C), P_pred)
-                self.filtered_prices.append(self.x[0, 0])
-                acceptable_price = self.filtered_prices[-1]
+                self.star_cache.append(self.get_mid(order_depth))
+                print("Star cache: " + str(self.star_cache))
 
+                if len(self.star_cache) > self.star_limit:
+                    self.star_cache.pop(0)
             print("Acceptable price : " + str(acceptable_price))
             print(
                 "Buy Order depth : "
@@ -60,17 +58,52 @@ class Trader:
                 + str(len(order_depth.sell_orders))
             )
 
-            if len(order_depth.sell_orders) != 0:
-                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-                if int(best_ask) < acceptable_price:
-                    print("BUY", str(-best_ask_amount) + "x", best_ask)
-                    orders.append(Order(product, best_ask, -best_ask_amount))
+            # if len(order_depth.sell_orders) != 0:
+            #     best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
+            #     if int(best_ask) < acceptable_price[1]:
+            #         print("BUY", str(-best_ask_amount) + "x", best_ask)
+            #         buy_amount = min(
+            #             -best_ask_amount, self.position_limits[product] - self.position[product]
+            #         )
+            #         self.position[product] += buy_amount
+            #         print("BUY", str(buy_amount) + "x", best_ask)
+            #         orders.append(Order(product, best_ask, buy_amount))
 
-            if len(order_depth.buy_orders) != 0:
-                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-                if int(best_bid) > acceptable_price:
-                    print("SELL", str(best_bid_amount) + "x", best_bid)
-                    orders.append(Order(product, best_bid, -best_bid_amount))
+            # if len(order_depth.buy_orders) != 0:
+            #     best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
+            #     if best_bid > acceptable_price[0]:  # sell
+            #         print("current position: " + str(self.position[product]))
+            #         # newpos = self.position[product] - (-mnt)
+            #         # sell_amount = -mnt
+            #         # if newpos < -self.position_limits[product]:
+            #         #     sell_amount += newpos
+            #         #     newpos = -self.position_limits[product]
+            #         # self.position[product] = newpos
+            #         sell_amount = max(
+            #             -best_bid_amount, -self.position[product] - self.position_limits[product]
+            #         )
+            #         self.position[product] += sell_amount
+            #         print("SELL", str(sell_amount) + "x", best_bid)
+            #         orders.append(Order(product, best_bid, sell_amount))
+
+            for price, mnt in order_depth.buy_orders.items():
+                if price > acceptable_price[0]:  # sell
+                    print("current position: " + str(self.position[product]))
+                    sell_amount = max(
+                        -mnt, -self.position[product] - self.position_limits[product]
+                    )
+                    self.position[product] += sell_amount
+                    print("SELL", str(sell_amount) + "x", price)
+                    orders.append(Order(product, price, sell_amount))
+            for price, mnt in order_depth.sell_orders.items():
+                if price < acceptable_price[1]:
+                    print("current position: " + str(self.position[product]))
+                    buy_amount = min(
+                        -mnt, self.position_limits[product] - self.position[product]
+                    )
+                    self.position[product] += buy_amount
+                    print("BUY", str(buy_amount) + "x", price)
+                    orders.append(Order(product, price, buy_amount))
 
             result[product] = orders
 
@@ -102,7 +135,7 @@ class Trader:
 #     ),
 # }
 
-# print(Trader.get_mid(trader, order_depths["AMETHYSTS"])
+# print(Trader.get_mid(trader, order_depths["AMETHYSTS"]))
 
 # own_trades = {
 #     "AMETHYSTS": [
