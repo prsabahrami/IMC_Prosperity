@@ -12,7 +12,7 @@ using namespace std;
 constexpr long long int N = 10000000;
 
 double m = 6.12;
-double total_probability = 1ll * m * 5050;
+double total_probability = 1.0 * m * 5050;
 
 double F(int i, int j) {
     if (i >= j) return 0;
