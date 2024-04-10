@@ -152,6 +152,7 @@ class Trader:
     star_limit = 4
     position = {"AMETHYSTS": 0, "STARFRUIT": 0}
     position_limits = {"AMETHYSTS": 20, "STARFRUIT": 20}
+    t = 0
 
     def get_mid(self, order_depth: OrderDepth):
         if len(order_depth.buy_orders) == 0 or len(order_depth.sell_orders) == 0:
@@ -164,16 +165,38 @@ class Trader:
         )
 
     def calc_next(self):
-        coefs = [0.3417687, 0.2610691, 0.2077068, 0.1889884]
+        polycoefs = [
+            5.028882e03,
+            4.178146e-02,
+            -2.865743e-05,
+            8.487999e-09,
+            -1.061188e-12,
+            3.142759e-17,
+            4.035450e-21,
+            -2.590489e-25,
+        ]
+        coefs = [0.3460803, 0.2626995, 0.1956541, 0.1921341]
         if len(self.star_cache) < self.star_limit:
             return [100000, -100000]
-        output = 2.3564944
+        output = 17.3638393
+        out2 = 0
         for i in range(len(coefs)):
             output += coefs[i] * self.star_cache[i]
-        return [output + 1, output - 1]
+        for i in range(7):
+            out2 += polycoefs[i] * (self.t**i)
+        # output += out2
+        # output /= 2
+        logger.print("timestamp: ", self.t)
+        return [
+            output + 4,
+            output
+            - 1
+            - 4 * bool(self.t >= 570 and self.t <= 640)
+            - 3 * bool(self.t >= 870 and self.t <= 960),
+        ]
 
     def run(self, state: TradingState):
-
+        self.t = state.timestamp / 100
         for key, val in state.position.items():
             self.position[key] = val
 
@@ -203,7 +226,8 @@ class Trader:
 
             pos = self.position[product]
 
-            for price, mnt in order_depth.sell_orders.items():
+            osell = sorted(order_depth.sell_orders.items())
+            for price, mnt in osell:
                 logger.print("current position: " + str(self.position[product]))
                 if (
                     price <= acceptable_price[1]
@@ -217,11 +241,11 @@ class Trader:
                     logger.print("BUY", str(buy_amount) + "x", price)
                     orders.append(Order(product, price, buy_amount))
 
-            buy_margin = list(order_depth.sell_orders.items())[0][0] + 1
-            sell_margin = list(order_depth.buy_orders.items())[0][0] - 1
+            # buy_margin = list(order_depth.sell_orders.items())[0][0] + 1
+            # sell_margin = list(order_depth.buy_orders.items())[0][0] - 1
 
-            bid = int(min(buy_margin, acceptable_price[0]))
-            ask = int(max(sell_margin, acceptable_price[1]))
+            # bid = int(min(buy_margin, acceptable_price[1]))
+            # ask = int(max(sell_margin, acceptable_price[0]))
 
             # if pos < self.position_limits[product]:
             #     buy_amount = self.position_limits[product] - pos
@@ -231,7 +255,8 @@ class Trader:
 
             pos = self.position[product]
 
-            for price, mnt in order_depth.buy_orders.items():
+            obuy = sorted(order_depth.buy_orders.items(), reverse=True)
+            for price, mnt in obuy:
                 logger.print("current position: " + str(self.position[product]))
                 if (
                     price >= acceptable_price[0]
@@ -251,75 +276,11 @@ class Trader:
             #     pos += sell_amount
             #     print("SELL", str(sell_amount) + "x", ask)
 
-            # for price, mnt in order_depth.buy_orders.items():
-            #     print("current position: " + str(self.position[product]))
-            #     if price > acceptable_price[0]:  # sell
-            #         sell_amount = max(
-            #             -mnt, -self.position[product] - self.position_limits[product]
-            #         )
-            #         self.position[product] += sell_amount
-            #         print("SELL", str(sell_amount) + "x", price)
-            #         orders.append(Order(product, price, sell_amount))
-            # buy_margin = min(
-            #     list(order_depth.buy_orders.items())[0][0] + 1, acceptable_price[0]
-            # )
-            # if buy_margin != float("inf") and buy_margin != -float("inf"):
-            #     buy_margin = ceil(buy_margin)
-            # if self.position[product] < self.position_limits[product]:
-            #     orders.append(
-            #         Order(
-            #             product,
-            #             buy_margin,
-            #             self.position_limits[product] - self.position[product],
-            #         )
-            #     )
-            #     print(
-            #         "BUY",
-            #         str(self.position_limits[product] - self.position[product]) + "x",
-            #         buy_margin,
-            #     )
-            # self.position[product] += (
-            #     self.position_limits[product] - self.position[product]
-            # )
-
-            # for price, mnt in order_depth.sell_orders.items():
-            #     print("current position: " + str(self.position[product]))
-            #     if price < acceptable_price[1]:
-            #         buy_amount = min(
-            #             -mnt, self.position_limits[product] - self.position[product]
-            #         )
-            #         self.position[product] += buy_amount
-            #         print("BUY", str(buy_amount) + "x", price)
-            #         orders.append(Order(product, price, buy_amount))
-
-            # sell_margin = max(
-            #     list(order_depth.sell_orders.items())[0][0] - 1, acceptable_price[1]
-            # )
-            # if sell_margin != float("inf") and sell_margin != -float("inf"):
-            #     sell_margin = int(sell_margin)
-            # if self.position[product] > -self.position_limits[product]:
-            #     orders.append(
-            #         Order(
-            #             product,
-            #             sell_margin,
-            #             -self.position[product] - self.position_limits[product],
-            #         )
-            #     )
-            #     print(
-            #         "SELL",
-            #         str(-self.position[product] - self.position_limits[product]) + "x",
-            #         sell_margin,
-            #     )
-
-            # self.position[product] -= (
-            #     self.position[product] + self.position_limits[product]
-            # )
-
             result[product] = orders
 
         traderData = ""
 
-        conversions = 1
+        conversions = 0
 
         logger.flush(state, result, conversions, traderData)
         return result, conversions, traderData
