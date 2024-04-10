@@ -1,6 +1,7 @@
 import pandas as pd
 
 df = pd.read_csv("prices_round_1_day_0.csv", sep=";")
+df.fillna(0, inplace=True)
 
 df["bidavg"] = (
     df["bid_price_1"] * df["bid_volume_1"]
